@@ -1,0 +1,73 @@
+import numpy as np
+from picamera.array import PiRGBArray
+from picamera import PiCamera
+import sys
+sys.path.append('/usr/local/lib/site-packages')
+import cv2
+import time
+
+lower_blue = np.array([100, 50, 20])
+upper_blue = np.array([140, 255, 180])
+lower_white = np.array([0, 0, 100])
+upper_white = np.array([255, 40, 255])
+lower_lower_red = np.array([0, 180, 20])
+lower_upper_red = np.array([10, 255, 150])
+upper_lower_red = np.array([170, 180, 20])
+upper_upper_red = np.array([180, 255, 150])
+
+# initialize the camera and grab a reference to the raw camera capture
+camera = PiCamera()
+camera.resolution = (640, 480)
+camera.framerate = 32
+rawCapture = PiRGBArray(camera, size=(640, 480))
+
+time.sleep(0.1)
+
+# capture frames from the camera
+for frame in camera.capture_continuous(rawCapture, format="bgr", use_video_port=True):
+    # grab the raw NumPy array representing the image, then initialize the timestamp
+    # and occupied/unoccupied text
+    image = frame.array
+
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+
+    # Threshold the HSV image to get only blue colors
+    #mask = cv2.inRange(hsv, lower_lower_red, lower_upper_red) | cv2.inRange(hsv, upper_lower_red, upper_upper_red)
+    mask = cv2.inRange(hsv, lower_blue, upper_blue)
+    # mask = cv2.inRange(hsv, lower_white, upper_white)
+    # cv2.imshow('masklowerred', mask)
+
+    kernel = np.ones((10, 10), np.uint8)
+    erosion = cv2.erode(mask, kernel, iterations=1)
+    dilation = cv2.dilate(mask, kernel, iterations=1)
+
+    image, contours, hierarchy = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    recordSize = 0
+    recordIndex = 0
+    for i in range(len(contours)):
+        if (cv2.contourArea(contours[i]) > recordSize):
+            recordSize = cv2.contourArea(contours[i])
+            recordIndex = i
+
+    M = cv2.moments(contours[recordIndex])
+
+    cx = int(M['m10'] / M['m00'])
+    cy = int(M['m01'] / M['m00'])
+    print(cx, cy)
+
+    cv2.drawContours(image, contours, recordIndex, (255, 0, 0), 5)
+    cv2.drawContours(image, contours, -1, (0, 0, 0), 3)
+    cv2.circle(image, (cx, cy), 20, (128, 0, 0), 2)
+
+
+    # show the frame
+    cv2.imshow("Frame", image)
+    key = cv2.waitKey(1) & 0xFF
+
+    # clear the stream in preparation for the next frame
+    rawCapture.truncate(0)
+
+    # if the `q` key was pressed, break from the loop
+    if key == ord("q"):
+        break
